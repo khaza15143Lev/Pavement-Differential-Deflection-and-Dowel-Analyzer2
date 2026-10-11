@@ -3710,7 +3710,10 @@ function updateDowelTable(xArr, pArr, mArr) {
 //  subgrade and wheel loads come from the input fields.
 let lastIn2Text = '';
 let lastNearText = '';
-let iTest = 1;
+let iTest = 0;
+// iDebug = 0 (default): input files (a1C_generated.in2 / a1Near.in2) are NOT
+// downloaded or saved automatically after a run. Set to 1 to restore that.
+let iDebug = 0;
 function momOn() { return id('fv-idf') && id('fv-idf').checked; }
 function maxMom(mArr) {
   if (!momOn() || !mArr || !mArr.length) return '-';
@@ -3874,6 +3877,7 @@ async function writeResult(name, text) {
   } catch (err) { return false; }
 }
 async function persistInputs() {
+  if (!iDebug) return '';
   const gotFolder = !!in2DirHandle;
   const saved = [];
   if (gotFolder && await writeResult('a1C_generated.in2', lastIn2Text)) saved.push('a1C_generated.in2');
