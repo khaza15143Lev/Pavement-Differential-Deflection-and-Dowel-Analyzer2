@@ -384,7 +384,7 @@ tbody tr:hover td { background: #ebf8ff; }
             <label>Poisson's Ratio</label>
             <input type="number" id="poisson" step="0.01" value="0.15" class="L">
             <label>Subgrade Modulus (pci)</label>
-            <input type="number" id="subgrade" value="100" class="L">
+            <input type="number" id="subgrade" value="200" class="L">
           </div>
         </div>
 
@@ -392,9 +392,9 @@ tbody tr:hover td { background: #ebf8ff; }
           <div class="section-label">Dowel Configuration</div>
           <div class="input-grid">
             <label>Diameter (in)</label>
-            <input type="number" id="dowel_dia" step="0.01" value="1.5" min="0.01" max="5" class="L">
+            <input type="number" id="dowel_dia" step="0.01" value="1" min="0.01" max="5" class="L">
             <label>Edge Distance (in)</label>
-            <input type="number" id="edge_dist" value="6" min="2" max="14" class="L">
+            <input type="number" id="edge_dist" value="12" min="2" max="14" class="L">
             <label>Bar Spacing (in)</label>
             <input type="number" id="dowel_spacing" value="12" min="4" max="16" class="L">
             <label>Support Modulus (pci)</label>
@@ -473,11 +473,11 @@ tbody tr:hover td { background: #ebf8ff; }
         <div class="fict-grid">
           <div class="fict-item">
             <div class="fi-label">c</div>
-            <input class="fi-input" id="fv-dist" type="number" step="any" min="0" title="Element size in x (editable — overrides the derived value)">
+            <input class="fi-input" id="fv-dist" type="number" step="any" min="0" value="6.0" title="Element size in x (editable — overrides the derived value)">
           </div>
           <div class="fict-item">
             <div class="fi-label">d</div>
-            <input class="fi-input" id="fv-len" type="number" step="any" min="0" title="Element size in y (editable — overrides the derived value)">
+            <input class="fi-input" id="fv-len" type="number" step="any" min="0" value="6.0" title="Element size in y (editable — overrides the derived value)">
           </div>
           <div class="fict-item">
             <div class="fi-label">Temperature Difference (ΔT)</div>
@@ -487,6 +487,12 @@ tbody tr:hover td { background: #ebf8ff; }
             <label class="fi-label" style="display:flex; align-items:center; gap:6px; margin-bottom:0; cursor:pointer;" title="Allows the dowel joint to transfer moment across the seam. Checked = 1, unchecked = 0 — written to the moment-transfer flag of the *YCJOINT record in the a1C.in2-style file.">
               <input type="checkbox" id="fv-idf">
               Moment transfer
+            </label>
+          </div>
+          <div class="fict-item">
+            <label class="fi-label" style="display:flex; align-items:center; gap:6px; margin-bottom:0; cursor:pointer;" title="Checked: iTemp = 1 -- in addition to the analysis for the current inputs, re-solve for temperature differences 0 to -40 F in steps of -5 F and plot max dowel force and max differential deflection (TEMP SWEEP tab). Unchecked: iTemp = 0.">
+              <input type="checkbox" id="fv-itemp" checked>
+              Temperature sensitivity analysis
             </label>
           </div>
           <div class="fict-item" style="grid-column: 1 / -1">
@@ -522,6 +528,7 @@ tbody tr:hover td { background: #ebf8ff; }
         <button class="tab-btn" onclick="switchTab('table')">DATA TABLE</button>
         <button class="tab-btn" onclick="switchTab('surf')">3D DEFLECTION</button>
         <button class="tab-btn" onclick="switchTab('stress')">STRESSES</button>
+        <button class="tab-btn" onclick="switchTab('temp')">TEMP SWEEP</button>
       </div>
 
       <div class="loading-bar" id="lbar"></div>
@@ -651,6 +658,27 @@ tbody tr:hover td { background: #ebf8ff; }
           </div>
           <div class="surf-wrap-canvas" style="cursor:default"><canvas id="stressCanvas"></canvas></div>
           <div class="fi-note" style="margin-top:6px">Tension is positive. Values outside the legend range are drawn in the end colours. The thin white lines are the slab-to-slab joints. Principal stress is the maximum principal stress.</div>
+        </div>
+      </div>
+
+      <!-- TEMPERATURE SWEEP tab (iTemp = 1) -->
+      <div class="tab-panel" id="tp-temp">
+        <div id="temp-empty" class="empty-state">
+          <div class="ei">&#127777;</div>
+          <h3>No temperature sweep yet</h3>
+          <p>Set <code>iTemp = 1</code> in the script and run the analysis. In addition to the analysis for the current inputs, the model is re-solved for temperature differences of 0 to -40 &deg;F in steps of -5 &deg;F.</p>
+        </div>
+        <div id="temp-wrap" style="display:none">
+          <div class="chart-title" style="font-weight:700;margin:6px 0">Maximum Dowel Force and Maximum Differential Deflection vs Temperature Difference</div>
+          <div style="position:relative;height:380px;"><canvas id="tempChart"></canvas></div>
+          <div class="tbl-wrap" style="display:block;margin-top:14px">
+            <div class="tbl-section">Temperature Sweep Results</div>
+            <table>
+              <thead><tr><th>Temperature Difference (&deg;F)</th><th>Max Dowel Force (lb)</th><th>Max Differential Deflection (in)</th></tr></thead>
+              <tbody id="tbl-sweep"></tbody>
+            </table>
+          </div>
+          <div class="fi-note" style="margin-top:6px">All other inputs are those currently set on the page; only the temperature difference changes. Maximum dowel force = largest |P| over the dowels; maximum differential deflection = largest value of the seam deflection difference, the same quantities shown on the Deflection Profile tab.</div>
         </div>
       </div>
 
@@ -3429,7 +3457,8 @@ function calcL() {
 
 // User overrides for the editable fictitious parameters:
 //   fictOverride.dist = c ,  fictOverride.len = d ,  fictOverride.spc = dT
-let fictOverride = {};
+const FICT_CD_DEFAULT = 6.0;   // default mesh size c and d (in)
+let fictOverride = { dist: FICT_CD_DEFAULT, len: FICT_CD_DEFAULT };
 const FICT_FIELDS = { dist: 'fv-dist', len: 'fv-len', spc: 'fv-spc' };
 
 // Fill an editable fictitious field with the derived value, unless the user
@@ -3442,11 +3471,9 @@ function setFictField(key, val) {
 }
 
 function resetFictOverrides() {
-  fictOverride = {};
-  const l = calcL();
-  const f = calcFictitious(l);
-  id(FICT_FIELDS.dist).value = f.dist.toFixed(4);
-  id(FICT_FIELDS.len).value  = f.len.toFixed(4);
+  fictOverride = { dist: FICT_CD_DEFAULT, len: FICT_CD_DEFAULT };
+  id(FICT_FIELDS.dist).value = '6.0';
+  id(FICT_FIELDS.len).value  = '6.0';
   id(FICT_FIELDS.spc).value  = -5.4014;   // physical default (a1C.in2), not derived
 }
 
@@ -3714,6 +3741,10 @@ let iTest = 0;
 // iDebug = 0 (default): input files (a1C_generated.in2 / a1Near.in2) are NOT
 // downloaded or saved automatically after a run. Set to 1 to restore that.
 let iDebug = 0;
+// iTemp = 1: in addition to the analysis for the current inputs, re-solve the
+// model for temperature differences 0, -5, ... -40 (deg F) and plot the maximum
+// dowel force and maximum differential deflection against them (TEMP SWEEP tab).
+let iTemp = 1;   // follows the 'Temperature sensitivity analysis' checkbox (checked by default)
 function momOn() { return id('fv-idf') && id('fv-idf').checked; }
 function maxMom(mArr) {
   if (!momOn() || !mArr || !mArr.length) return '-';
@@ -3990,13 +4021,13 @@ function extractSeamDifferential(res) {
   return { xx, prof };
 }
 
-async function runSolverPipeline(in2text) {
+async function runSolverPipeline(in2text, skipConfirm) {
   await ensureSolver();
   pyodide.FS.writeFile('input.in2', in2text);
   const sizeJson = pyodide.globals.get('mesh_size_estimate_js')('input.in2');
   let size = null;
   try { size = JSON.parse(sizeJson); } catch (e) { size = null; }
-  if (size && !size.error && size.ndof > 30000) {
+  if (size && !size.error && size.ndof > 30000 && !skipConfirm) {
     if (!confirm('Mesh: ' + size.nnx + ' x ' + size.nny + ' nodes, ndof = ' + size.ndof +
                  '.\nThis can take a while single-threaded in the browser.\n\nContinue?')) {
       throw new Error('Run cancelled.');
@@ -4100,6 +4131,7 @@ function validateInputs() {
 }
 
 async function runAnalysis() {
+  iTemp = id('fv-itemp').checked ? 1 : 0;
   // Validate constrained inputs first
   const valErrors = validateInputs();
   if (valErrors.length > 0) {
@@ -4144,6 +4176,17 @@ async function runAnalysis() {
         const ou2Status = await persistOu2();
         const resultNote = [inStatus, ou2Status].filter(Boolean).join(' | ');
         if (resultNote) setSolverNote(resultNote, false);
+        if (iTemp) {
+          try {
+            await runTempSweep(l, fict);
+            setSolverNote([resultNote, 'temperature sweep complete (see the TEMP SWEEP tab)']
+                          .filter(Boolean).join(' | '), false);
+          } catch (e2) {
+            console.warn('Temperature sweep failed.', e2);
+            setSolverNote('Temperature sweep failed (' +
+                          (e2 && e2.message ? e2.message : String(e2)) + ').', true);
+          }
+        }
       } catch (err) {
         console.warn('Solver path failed.', err);
         setSolverNote(
@@ -4176,6 +4219,7 @@ function liveUpdate() {
   id('chart-panel').style.display    = 'none';
   lastSurf = null; surfVisibility();
   lastStress = null; stressVisibility();
+  lastSweep = null; tempVisibility();
   if (firstLive) {
     id('empty-plot').style.display   = 'block';
     firstLive = false;
@@ -4631,8 +4675,82 @@ function drawStress() {
   window.addEventListener('resize', redraw);
 })();
 
+// ═══════════════════════════════════════════════════
+//  TEMPERATURE SWEEP (iTemp = 1)
+// ═══════════════════════════════════════════════════
+let lastSweep = null;       // [{ T, maxF, maxDD }]
+let tempChart = null;
+
+function tempVisibility() {
+  id('temp-empty').style.display = lastSweep ? 'none' : 'block';
+  id('temp-wrap').style.display  = lastSweep ? 'block' : 'none';
+}
+
+async function runTempSweep(l, fict) {
+  const temps = [];
+  for (let T = 0; T >= -40; T -= 5) temps.push(T);
+  const out = [];
+  for (let k = 0; k < temps.length; k++) {
+    const T = temps[k];
+    setSolverNote('Temperature sweep: ' + Math.round(100 * k / temps.length) +
+                  '% complete (running ' + (k + 1) + ' of ' + temps.length +
+                  ', temperature difference = ' + T + ' F)...', false);
+    await new Promise(r => setTimeout(r, 20));      // let the note paint
+    const in2 = buildIn2(l, Object.assign({}, fict, { spc: T }));
+    const res = await runSolverPipeline(in2, true);
+    const { prof } = extractSeamDifferential(res);
+    const dow = parseDowelRows(res.dowel_text);
+    out.push({
+      T: T,
+      maxF:  dow.P.length ? Math.max(...dow.P.map(Math.abs)) : 0,
+      maxDD: Math.max(...prof)
+    });
+  }
+  setSolverNote('Temperature sweep: 100% complete.', false);
+  lastSweep = out;
+  renderTempSweep();
+}
+
+function renderTempSweep() {
+  tempVisibility();
+  if (!lastSweep) return;
+  const tb = id('tbl-sweep');
+  tb.innerHTML = lastSweep.map(r =>
+    '<tr><td>' + r.T + '</td><td>' + r.maxF.toFixed(2) + '</td><td>' +
+    r.maxDD.toExponential(4) + '</td></tr>').join('');
+  if (!id('tp-temp').classList.contains('active')) return;
+  if (tempChart) tempChart.destroy();
+  tempChart = new Chart(id('tempChart').getContext('2d'), {
+    type: 'line',
+    data: { datasets: [
+      { label: 'Max dowel force (lb)', yAxisID: 'yF',
+        data: lastSweep.map(r => ({ x: r.T, y: r.maxF })),
+        borderColor: '#2b6cb0', backgroundColor: '#2b6cb0', pointRadius: 4, tension: 0 },
+      { label: 'Max differential deflection (in)', yAxisID: 'yD',
+        data: lastSweep.map(r => ({ x: r.T, y: r.maxDD })),
+        borderColor: '#c53030', backgroundColor: '#c53030', pointRadius: 4, tension: 0 }
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x:  { type: 'linear', min: -40, max: 0, reverse: false,
+              title: { display: true, text: 'Temperature difference (\u00b0F)' },
+              ticks: { stepSize: 5 } },
+        yF: { type: 'linear', position: 'left',
+              title: { display: true, text: 'Max dowel force (lb)', color: '#2b6cb0' },
+              ticks: { color: '#2b6cb0' } },
+        yD: { type: 'linear', position: 'right', grid: { drawOnChartArea: false },
+              title: { display: true, text: 'Max differential deflection (in)', color: '#c53030' },
+              ticks: { color: '#c53030' } }
+      },
+      plugins: { legend: { position: 'top' } }
+    }
+  });
+}
+
 function switchTab(name) {
-  const names = ['plot','table','surf','stress'];
+  const names = ['plot','table','surf','stress','temp'];
   document.querySelectorAll('.tab-btn').forEach((b,i)=>
     b.classList.toggle('active', names[i]===name));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
@@ -4640,6 +4758,7 @@ function switchTab(name) {
   if (name==='plot' && chart) chart.resize();
   if (name==='surf') drawSurface();
   if (name==='stress') drawStress();
+  if (name==='temp') renderTempSweep();
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -4899,11 +5018,18 @@ for (const key of ['dist', 'len']) {
   id(FICT_FIELDS[key]).addEventListener('input', () => {
     const v = parseFloat(id(FICT_FIELDS[key]).value);
     if (isFinite(v) && v > 0) fictOverride[key] = v;
-    else delete fictOverride[key];
+    else fictOverride[key] = FICT_CD_DEFAULT;
   });
 }
 // Slab size is a physical mesh input; redraw the plan view as it changes.
 id('fv-slab').addEventListener('input', liveUpdate);
+// Any other change to the inputs (c, d, temperature difference, and the
+// Moment transfer / Temperature sensitivity analysis checkboxes) also empties
+// all result tabs, exactly like the .L inputs above.
+for (const elId of ['fv-dist', 'fv-len', 'fv-spc'])
+  id(elId).addEventListener('input', liveUpdate);
+for (const elId of ['fv-idf', 'fv-itemp'])
+  id(elId).addEventListener('change', liveUpdate);
 // Live out-of-range highlighting
 INPUT_LIMITS.forEach(({ id: elId, min, max }) => {
   const el = document.getElementById(elId);
